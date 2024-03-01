@@ -1,0 +1,14 @@
+[project]
+name = "arc-bot"
+version = "0.1.0"
+description = "arc-bot"
+readme = "README.md"
+requires-python = ">=3.8, <4.0"
+
+[tool.nonebot]
+adapters = [
+    { name = "OneBot V11", module_name = "nonebot.adapters.onebot.v11" }
+]
+plugins = ["nonebot_plugin_localstore"]
+plugin_dirs = ["arc_bot/plugins"]
+builtin_plugins = ["echo"]
