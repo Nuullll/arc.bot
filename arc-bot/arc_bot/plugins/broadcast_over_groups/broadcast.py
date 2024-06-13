@@ -2,6 +2,7 @@ from .database import MessageDB, UserDB
 from nonebot import logger
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageSegment, Bot, GroupRecallNoticeEvent, GroupIncreaseNoticeEvent, GroupUploadNoticeEvent
 from nonebot.adapters.onebot.v11.event import Reply
+from nonebot.exception import ActionFailed
 import requests
 import os
 
@@ -42,6 +43,7 @@ class BroadcastManager:
     async def postprocess_msg(self, bot: Bot, msg: Message, group_id: int):
         new_msg = Message("")
         for seg in msg:
+            logger.debug(f"Processing segment: {seg}")
             new_seg = seg
             if seg.type == "at":
                 # translate [cq:at] to @nickname if user is not in the group
@@ -61,6 +63,10 @@ class BroadcastManager:
                         new_seg = MessageSegment.image(img_bytes)
                     else:
                         new_seg = MessageSegment.text("[图片转发失败]")
+            elif seg.type == "reply":
+                # discard [CQ:reply] if id is zero
+                if int(seg.data.get("id")) == 0:
+                    continue
             new_msg += new_seg
         return new_msg
         
@@ -140,6 +146,9 @@ class BroadcastManager:
         await self.send_global_notices(bot, msg, groups)
 
     def download_file(self, url: str, filename: str):
+        # create local tmp dir if not exist
+        if not os.path.exists(self.local_tmp_storage):
+            os.makedirs(self.local_tmp_storage)
         filepath = os.path.join(self.local_tmp_storage, filename)
         # make sure absolute path is still under self.local_tmp_storage
         # to avoid path traversal attacks

@@ -1,7 +1,7 @@
-from nonebot import get_plugin_config, on_message, logger, on_notice
+from nonebot import get_plugin_config, on_message, logger, on_notice, on_command
 from nonebot.plugin import PluginMetadata
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageSegment, Bot, GroupRecallNoticeEvent, GroupIncreaseNoticeEvent, GroupUploadNoticeEvent
-from nonebot.rule import is_type
+from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageSegment, Bot, GroupRecallNoticeEvent, GroupIncreaseNoticeEvent, GroupUploadNoticeEvent, PrivateMessageEvent
+from nonebot.rule import is_type, to_me
 
 from .config import Config
 from .broadcast import BroadcastManager
@@ -35,3 +35,8 @@ group_file = on_notice(rule=is_type(GroupUploadNoticeEvent))
 @group_file.handle()
 async def _(bot: Bot, event: GroupUploadNoticeEvent):
     await broadcaster.on_group_upload_notice_event(bot, event)
+
+faq = on_message(rule=to_me())
+@faq.handle()
+async def _(bot: Bot, event: PrivateMessageEvent):
+    logger.info(event)
