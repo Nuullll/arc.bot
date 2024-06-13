@@ -67,6 +67,11 @@ class BroadcastManager:
                 # discard [CQ:reply] if id is zero
                 if int(seg.data.get("id")) == 0:
                     continue
+            elif seg.type == "forward":
+                # don't forward [CQ:forward] messages
+                # send a global notice as well
+                await self.send_global_notices(bot, MessageSegment.text("[群友发送了一则聊天记录，本机器人不予转发]\n[聊天记录可轻易伪造，请各位群友自行甄别]"), self.get_groups_to_broadcast(group_id))
+                return None
             new_msg += new_seg
         return new_msg
         
@@ -122,7 +127,10 @@ class BroadcastManager:
             await bot.delete_msg(message_id=msg_id)
         self.msg_db.delete_clones(message_id=recalled_msg_id)
 
-    async def send_global_notices(self, bot: Bot, msg: Message, group_list: list[int]):
+    async def send_global_notices(self, bot: Bot, msg: Message, group_list: list[int] = None):
+        # default broadcast channel
+        if not group_list:
+            group_list = self.broadcast_sessions["Test"]
         orig_msg_id = None
         for group_id in group_list:
             response = await bot.send_group_msg(group_id=group_id, message=msg)
