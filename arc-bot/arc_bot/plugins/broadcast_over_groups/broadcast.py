@@ -55,14 +55,12 @@ class BroadcastManager:
                     nickname = await self.get_user_nickname(bot, groups[0], atee_id)
                     new_seg = f"@{nickname}"
             elif seg.type == "image":
-                # W/A for unable to forward images from multimedia.nt.qq.com.cn
-                url = seg.data.get("url")
-                if url.startswith("https://multimedia.nt.qq.com.cn/"):
-                    img_bytes = self.get_url_content(url)
-                    if img_bytes:
-                        new_seg = MessageSegment.image(img_bytes)
-                    else:
-                        new_seg = MessageSegment.text("[图片转发失败]")
+                # W/A for https://github.com/LagrangeDev/Lagrange.Core/issues/315
+                file = seg.data.get("file").replace("https://multimedia.nt.qq.com.cn", "http://multimedia.nt.qq.com.cn")
+                url = seg.data.get("url").replace("https://multimedia.nt.qq.com.cn", "http://multimedia.nt.qq.com.cn")
+                seg.data["file"] = file
+                seg.data["url"] = url
+                new_seg = seg
             elif seg.type == "reply":
                 # discard [CQ:reply] if id is zero
                 if int(seg.data.get("id")) == 0:
@@ -70,19 +68,23 @@ class BroadcastManager:
             elif seg.type == "forward":
                 # don't forward [CQ:forward] messages
                 # send a global notice as well
-                await self.send_global_notices(bot, MessageSegment.text("[群友发送了一则聊天记录，本机器人不予转发]\n[聊天记录可轻易伪造，请各位群友自行甄别]"), self.get_groups_to_broadcast(group_id))
+                await self.send_global_notices(bot, MessageSegment.text("[群友发送了一则聊天记录，本机器人不予转发]\n[聊天记录可轻易伪造，请各位群友自行甄别]"), group_id)
                 return None
             new_msg += new_seg
         return new_msg
         
     # If message is a reply to another message "M", find the message clone ids of "M" in each group to broadcast
     async def get_reply_clone_ids(self, bot: Bot, reply: Reply):
-        reply_msg_id = reply.message_id
-        reply_original_id = self.msg_db.query_original_id(message_id=reply_msg_id)
-        reply_original_msg = await bot.get_msg(message_id=reply_original_id)
-        atee_id = reply_original_msg['sender']['user_id']
-        message_clones = self.msg_db.query_clones(message_id=reply_msg_id)
-        return {group_id: msg_id for msg_id, group_id in message_clones}, atee_id
+        try:
+            reply_msg_id = reply.message_id
+            reply_original_id = self.msg_db.query_original_id(message_id=reply_msg_id)
+            reply_original_msg = await bot.get_msg(message_id=reply_original_id)
+            atee_id = reply_original_msg['sender']['user_id']
+            message_clones = self.msg_db.query_clones(message_id=reply_msg_id)
+            return {group_id: msg_id for msg_id, group_id in message_clones}, atee_id
+        except ActionFailed as e:
+            logger.error(f"Failed to get reply clone ids: {e}")
+            return {}, 0
 
     async def generate_broadcast_messages(self, bot: Bot, event: GroupMessageEvent, nickname: str, group_list: list[int]):
         if event.reply:
@@ -127,10 +129,12 @@ class BroadcastManager:
             await bot.delete_msg(message_id=msg_id)
         self.msg_db.delete_clones(message_id=recalled_msg_id)
 
-    async def send_global_notices(self, bot: Bot, msg: Message, group_list: list[int] = None):
+    async def send_global_notices(self, bot: Bot, msg: Message, current_group_id: int = None):
         # default broadcast channel
-        if not group_list:
+        if not current_group_id:
             group_list = self.broadcast_sessions["Test"]
+        else:
+            group_list = self.get_groups_to_broadcast(current_group_id)
         orig_msg_id = None
         for group_id in group_list:
             response = await bot.send_group_msg(group_id=group_id, message=msg)
@@ -151,7 +155,7 @@ class BroadcastManager:
 我是机器人闹闹，我会在Arc.AI.Next的所有({len(groups)}个)群里同步转发所有人的发言！
 祝您玩得开心！"""
 
-        await self.send_global_notices(bot, msg, groups)
+        await self.send_global_notices(bot, msg, event.group_id)
 
     def download_file(self, url: str, filename: str):
         # create local tmp dir if not exist
@@ -211,7 +215,7 @@ class BroadcastManager:
         filename, filesize, url = event.file.name, event.file.size, event.file.url
         if filesize >= 20*1024*1024:
             nickname = await self.get_user_nickname(bot, event.group_id, event.user_id)
-            await self.send_global_notices(bot, MessageSegment.text(f"{nickname} 上传了一个超大文件，无法转发"), groups)
+            await self.send_global_notices(bot, MessageSegment.text(f"{nickname} 上传了一个超大文件，无法转发"), event.group_id)
             return
         filename = f"{event.user_id}-{filename}"
         logger.debug(f"Downloading file {filename} ({filesize}B) from {url}")
