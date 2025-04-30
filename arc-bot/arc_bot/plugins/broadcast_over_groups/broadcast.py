@@ -41,6 +41,7 @@ class BroadcastManager:
         self.user_db.initialized = True
 
     async def postprocess_msg(self, bot: Bot, msg: Message, group_id: int):
+        msg_list = []
         new_msg = Message("")
         for seg in msg:
             logger.debug(f"Processing segment: {seg}")
@@ -70,8 +71,20 @@ class BroadcastManager:
                 # send a global notice as well
                 await self.send_global_notices(bot, MessageSegment.text("[群友发送了一则聊天记录，本机器人不予转发]\n[聊天记录可轻易伪造，请各位群友自行甄别]"), group_id)
                 return None
+            elif seg.type == "json":
+                logger.info(f"json segment: {seg.data}")
+                # break remaining segments into a new message
+                new_msg += seg
+                msg_list.append(new_msg)
+                new_msg = Message("")
+                continue
+            else:
+                logger.info(f"Unknown segment type: {seg.type}")
+                logger.info(f"Unknown segment data: {seg.data}")
+                new_seg = seg
             new_msg += new_seg
-        return new_msg
+        msg_list.append(new_msg)
+        return msg_list
         
     # If message is a reply to another message "M", find the message clone ids of "M" in each group to broadcast
     async def get_reply_clone_ids(self, bot: Bot, reply: Reply):
@@ -100,8 +113,9 @@ class BroadcastManager:
                 if reply_clone_id := reply_clone_ids.get(group_id):
                     msg = MessageSegment.reply(reply_clone_id) + MessageSegment.at(user_id=atee_id) + MessageSegment.at(user_id=atee_id) + '\n' + msg
             
-            msg = await self.postprocess_msg(bot, msg, group_id)
-            yield group_id, msg
+            msg_list = await self.postprocess_msg(bot, msg, group_id)
+            for msg in msg_list:
+                yield group_id, msg
 
     async def get_user_nickname(self, bot: Bot, group_id: int, user_id: int):
         user_info = await bot.get_group_member_info(group_id=group_id, user_id=user_id)
